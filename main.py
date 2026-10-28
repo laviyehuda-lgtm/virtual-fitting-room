@@ -171,6 +171,7 @@ class EditIn(BaseModel):
     image: str
     kind: str = Field(pattern="^(color|hex|fabric|pattern|length|neckline|view|free)$")
     value: str = Field(max_length=400)
+    refs: list[str] = Field(default_factory=list, max_length=4)
 
 
 def build_prompt(kind: str, value: str) -> str:
@@ -238,9 +239,33 @@ async def tryon(body: TryOnIn):
 @app.post("/api/edit", dependencies=[Depends(guard)])
 async def edit(body: EditIn):
     check_image(body.image)
+    for r in body.refs:
+        check_image(r)
+    if body.refs and body.kind != "free":
+        raise HTTPException(400, "תמונות עזר נתמכות רק בעריכה חופשית")
     prompt = build_prompt(body.kind, body.value)
+    if body.refs:
+        n = len(body.refs)
+        refs_txt = "Image 2 is a reference image" if n == 1 else f"Images 2 to {n + 1} are reference images"
+        prompt = (
+            f"Image 1 is the photo to edit. {refs_txt} provided by the user. "
+            f"Edit only the clothing the person in image 1 is wearing, as follows: {body.value.strip()}. "
+            "When the instruction refers to the attached image or images, copy exactly what it asks for from them "
+            "(for example the same fabric, texture, weave, sheen, color, print, lace, buttons or detail), "
+            "matching it as closely as possible. Do not copy people, faces, bodies or backgrounds from the "
+            f"reference images. {KEEP}"
+        )
     if not FAL_KEY:
         return {"image": body.image, "demo": True, "prompt": prompt}
+    if body.refs:
+        url = await fal(PRO_MODEL, {
+            "prompt": prompt,
+            "image_urls": [body.image, *body.refs],
+            "aspect_ratio": "auto",
+            "resolution": "2K",
+            "output_format": "jpeg",
+        })
+        return {"image": await to_data_url(url)}
     url = await fal(EDIT_MODEL, {
         "prompt": prompt,
         "image_urls": [body.image],
