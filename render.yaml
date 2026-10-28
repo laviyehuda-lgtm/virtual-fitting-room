@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: fitting-room
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/status
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: FAL_KEY
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
