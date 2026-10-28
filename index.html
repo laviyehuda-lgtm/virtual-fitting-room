@@ -161,8 +161,15 @@ footer { color: var(--muted); font-size: 13px; text-align: center; }
         <button class="chip" data-v="bottoms" aria-pressed="false">חלק תחתון</button>
       </div>
     </div>
+    <div>
+      <p class="sub">איכות ההלבשה</p>
+      <div class="chips" id="engine">
+        <button class="chip" data-v="pro" aria-pressed="true">מדויק לעיצוב</button>
+        <button class="chip" data-v="fast" aria-pressed="false">מהיר וזול</button>
+      </div>
+      <p class="hint" id="engineHint">שומר על העיצוב המקורי: כתף חשופה, פפיונים, נפחים. כ-15 סנט, עד דקה.</p>
+    </div>
     <button class="btn primary" id="go" disabled>להלביש</button>
-    <p class="cost">הלבשה אחת עולה כ-8 סנט מהקרדיט ב-fal ולוקחת 15 עד 40 שניות.</p>
   </section>
 
   <!-- שלב 2: תוצאה ועריכה -->
@@ -184,6 +191,7 @@ footer { color: var(--muted); font-size: 13px; text-align: center; }
         <a class="btn" id="save" download="look.jpg" style="display:inline-grid;place-items:center;text-decoration:none">שמירה</a>
       </div>
       <div class="film" id="film" aria-label="גרסאות"></div>
+      <button class="btn" id="retryPro">העיצוב לא נשמר? להלביש שוב במצב מדויק</button>
       <div id="err" class="error" hidden></div>
 
       <div class="card">
@@ -319,7 +327,11 @@ async function toDataUrl(file, max = 1536) {
   return { url: c.toDataURL('image/jpeg', 0.9), w: bmp.width, h: bmp.height }
 }
 
-const state = { person: null, garment: null, category: 'auto', versions: [], idx: -1, busy: false }
+const state = { person: null, garment: null, category: 'auto', engine: 'pro', versions: [], idx: -1, busy: false }
+const ENGINE_HINT = {
+  pro: 'שומר על העיצוב המקורי: כתף חשופה, פפיונים, נפחים. כ-15 סנט, עד דקה.',
+  fast: 'מתאים לבגדים פשוטים (חולצה, מכנסיים). כ-8 סנט, 15 עד 40 שניות.',
+}
 
 function pick(inputSel, tileSel, key) {
   $(inputSel).addEventListener('change', async (e) => {
@@ -341,6 +353,12 @@ function pick(inputSel, tileSel, key) {
 pick('#personInput', '#personTile', 'person')
 pick('#garmentInput', '#garmentTile', 'garment')
 
+$('#engine').addEventListener('click', (e) => {
+  const b = e.target.closest('.chip'); if (!b) return
+  $$('#engine .chip').forEach((c) => c.setAttribute('aria-pressed', String(c === b)))
+  state.engine = b.dataset.v
+  $('#engineHint').textContent = ENGINE_HINT[state.engine]
+})
 $('#category').addEventListener('click', (e) => {
   const b = e.target.closest('.chip'); if (!b) return
   $$('#category .chip').forEach((c) => c.setAttribute('aria-pressed', String(c === b)))
@@ -391,14 +409,23 @@ function push(image, label) {
 }
 
 // ---------- actions ----------
+$('#retryPro').onclick = async () => {
+  if (state.busy) return
+  showErr('#err', '')
+  busy(true, 'מלביש שוב במצב מדויק…')
+  try {
+    const r = await api('/api/tryon', { person: state.person, garment: state.garment, category: state.category, engine: 'pro' })
+    push(r.image, 'הלבשה מדויקת')
+  } catch (e) { handle(e) } finally { busy(false) }
+}
 $('#go').onclick = async () => {
   $('#upload').hidden = true; $('#result').hidden = false
   state.versions = [{ image: state.person, label: 'המקור' }]; state.idx = 0; render()
   showErr('#err', '')
   busy(true, 'מלביש את הבגד עליך…')
   try {
-    const r = await api('/api/tryon', { person: state.person, garment: state.garment, category: state.category })
-    push(r.image, 'הלבשה')
+    const r = await api('/api/tryon', { person: state.person, garment: state.garment, category: state.category, engine: state.engine })
+    push(r.image, state.engine === 'pro' ? 'הלבשה מדויקת' : 'הלבשה מהירה')
   } catch (e) { handle(e) } finally { busy(false) }
 }
 

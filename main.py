@@ -28,6 +28,7 @@ FAL_KEY = os.getenv("FAL_KEY", "").strip()
 APP_PASSWORD = os.getenv("APP_PASSWORD", "").strip()
 TRYON_MODEL = os.getenv("TRYON_MODEL", "fal-ai/fashn/tryon/v1.6")
 EDIT_MODEL = os.getenv("EDIT_MODEL", "fal-ai/nano-banana/edit")
+PRO_MODEL = os.getenv("PRO_MODEL", "fal-ai/nano-banana-pro/edit")
 FAL_BASE = os.getenv("FAL_BASE", "https://fal.run").rstrip("/")
 MAX_IMAGE_CHARS = 12_000_000  # data URL של כ-9MB
 STATIC = Path(__file__).parent
@@ -143,6 +144,27 @@ class TryOnIn(BaseModel):
     garment: str
     category: str = Field("auto", pattern="^(auto|tops|bottoms|one-pieces)$")
     garment_photo_type: str = Field("auto", pattern="^(auto|model|flat-lay)$")
+    engine: str = Field("pro", pattern="^(pro|fast)$")
+
+
+PRO_TRYON = (
+    "Image 1 shows a person. Image 2 shows a garment, possibly worn by a different model. "
+    "Dress the person from image 1 in the exact garment from image 2. "
+    "Reproduce the garment's design faithfully: its exact silhouette and cut, neckline and shoulders "
+    "(for example one-shoulder or off-the-shoulder), sleeves or lack of sleeves, ruffles, bows, drapes and "
+    "sculptural volumes, length, fabric, sheen and color. "
+    "Completely remove everything the person is currently wearing in the area the new garment covers or "
+    "replaces, including jackets, sleeves and trousers; show bare skin where the new garment leaves it bare. "
+    "{extra}"
+    "Keep the person's face, identity, hair, skin tone, body shape, glasses and accessories, pose, background "
+    "and lighting exactly as in image 1. Ignore the model, face and body in image 2. Photorealistic photo."
+)
+PRO_EXTRA = {
+    "auto": "",
+    "one-pieces": "The garment is a one-piece (dress or jumpsuit) that replaces the whole outfit, top and bottom. ",
+    "tops": "The garment is a top; keep the person's current bottom garment unchanged. ",
+    "bottoms": "The garment is a bottom; keep the person's current top garment unchanged. ",
+}
 
 
 class EditIn(BaseModel):
@@ -191,15 +213,25 @@ async def tryon(body: TryOnIn):
     check_image(body.garment)
     if not FAL_KEY:
         return {"image": body.person, "demo": True}
-    url = await fal(TRYON_MODEL, {
-        "model_image": body.person,
-        "garment_image": body.garment,
-        "category": body.category,
-        "garment_photo_type": body.garment_photo_type,
-        "mode": "quality",
-        "moderation_level": "permissive",
-        "output_format": "jpeg",
-    })
+    if body.engine == "pro":
+        url = await fal(PRO_MODEL, {
+            "prompt": PRO_TRYON.format(extra=PRO_EXTRA[body.category]),
+            "image_urls": [body.person, body.garment],
+            "aspect_ratio": "auto",
+            "resolution": "2K",
+            "output_format": "jpeg",
+        })
+    else:
+        url = await fal(TRYON_MODEL, {
+            "model_image": body.person,
+            "garment_image": body.garment,
+            "category": body.category,
+            "garment_photo_type": body.garment_photo_type,
+            "segmentation_free": False,  # מסיר את הבגד הקודם לגמרי (למשל שרוולי בלייזר)
+            "mode": "quality",
+            "moderation_level": "permissive",
+            "output_format": "jpeg",
+        })
     return {"image": await to_data_url(url)}
 
 
